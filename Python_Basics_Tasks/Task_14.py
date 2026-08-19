@@ -13,7 +13,15 @@ Name: Alex
 Sport: Boxing
 Weight: 80""")
 
+<<<<<<< HEAD
 file.close()
 file=open("athlete.txt", "r")
 print(file.read())
 file.close()
+=======
+file.close
+file=open("athlete.txt", "r")
+print(file.read())
+file.close()
+
+>>>>>>> b70a066b10254d01e61bd840da8226b9170c8b26
