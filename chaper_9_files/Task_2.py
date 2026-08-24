@@ -10,14 +10,14 @@ Append works
 New file
 После этого своими словами объясни, почему старые четыре строки исчезли."""
 
-"""with open("notes.txt", "a", encoding="utf-8") as f:
+with open("notes.txt", "a", encoding="utf-8") as f:
     f.write("Append works\n")
 
 with open("notes.txt","r", encoding="utf-8") as f:
     for line in f:
         print(line)
 
-        """
+        
 """Ausgabe:
 Python
 
@@ -32,3 +32,7 @@ with open("notes.txt","w", encoding="utf-8") as f:
 
 with open("notes.txt","r", encoding="utf-8") as f:
     print(f.read())
+
+"""Ausgabe:
+New file
+"""

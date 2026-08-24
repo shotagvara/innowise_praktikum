@@ -24,3 +24,9 @@ with open("users.txt","r",encoding="utf-8") as f:
         name, age = line.split(",")
         print(f"Name: {name} | Age: {age}")
         
+"""
+Name: Luka | Age: 20
+
+Name: Anna | Age: 25
+
+Name: Bob | Age: 31"""

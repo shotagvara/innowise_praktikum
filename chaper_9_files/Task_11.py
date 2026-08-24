@@ -23,3 +23,6 @@ with open("image.png", "rb") as f:
 with open("image_copy.png", "wb") as f:
     f.write(data)
 
+
+
+

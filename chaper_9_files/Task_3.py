@@ -44,3 +44,11 @@ one
 with open("file.txt","r", encoding="utf-8") as f:
     print(f.read())
     print(f.read())
+
+"""Ausgabe:
+
+one
+two
+hree
+four
+"""
