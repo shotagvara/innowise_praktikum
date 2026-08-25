@@ -20,11 +20,18 @@ matrix = [
     [4, 5, 6],
     [7, 8, 9]
 ]
+
+"""Было"""
 for i in range(0,3):
     for j in range(0,3):
         if j==1: list.append(matrix[i][j])
 
-print(list)
+print(list,"bylo")
+
+"""Стало:"""
+
+list_2=[spalte[1] for spalte in matrix]
+print(list_2, "stalo")
 
 list=[a**2 for a in list]
 print(list)
