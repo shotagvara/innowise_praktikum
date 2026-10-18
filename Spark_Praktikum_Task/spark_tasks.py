@@ -2,63 +2,69 @@ import logging
 import os
 import sys
 from pathlib import Path
+from dotenv import load_dotenv
 
 from pyspark.sql import SparkSession
 from pyspark.sql import functions as F
 from pyspark.sql.window import Window
 
+BASE_DIR = Path(__file__).resolve().parent
+load_dotenv(BASE_DIR / ".env")
 
-os.environ["PYSPARK_PYTHON"] = sys.executable
-os.environ["PYSPARK_DRIVER_PYTHON"] = sys.executable
-os.environ["SPARK_LOCAL_IP"] = os.getenv("SPARK_LOCAL_IP", "127.0.0.1")
-os.environ["SPARK_LOCAL_HOSTNAME"] = "localhost"
+
+os.environ.setdefault("PYSPARK_PYTHON", sys.executable)
+os.environ.setdefault("PYSPARK_DRIVER_PYTHON", sys.executable)
+
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 logger = logging.getLogger(__name__)
 
-jdbc_jar = Path(__file__).parent / "postgresql-42.7.14.jar"
+jdbc_jar = (
+    Path(__file__).resolve().parent
+    / os.environ["POSTGRES_JDBC_JAR"]
+)
 
 spark = (
     SparkSession.builder
     .appName("PagilaSparkTasks")
-    .master("local[2]")
-    .config("spark.driver.host", "127.0.0.1")
-    .config("spark.driver.bindAddress", "127.0.0.1")
-    .config("spark.driver.extraClassPath", str(jdbc_jar.resolve()))
-    .config("spark.executor.extraClassPath", str(jdbc_jar.resolve()))
+    .master(os.environ["SPARK_MASTER"]) #"local[2]"
+    .config("spark.driver.host", os.environ["SPARK_DRIVER_HOST"])  #"127.0.0.1"
+    .config("spark.driver.bindAddress", os.environ["SPARK_DRIVER_BIND_ADDRESS"])# "127.0.0.1"
+    .config("spark.driver.extraClassPath", str(jdbc_jar))
+    .config("spark.executor.extraClassPath", str(jdbc_jar))
     .getOrCreate()
 )
 spark.sparkContext.setLogLevel("ERROR")
 
 
-def load_table(table, columns):
+def load_table(table, *columns):
     query = f"(SELECT {', '.join(columns)} FROM public.{table}) AS source"
 
     return (
         spark.read.format("jdbc")
-        .option("url", "jdbc:postgresql://127.0.0.1:55432/pagila")
+        .option("url", os.environ["PAGILA_DB_URL"])
         .option("dbtable", query)
-        .option("user", "postgres")
+        .option("user", os.environ["PAGILA_DB_USER"])
         .option("password", os.environ["PAGILA_DB_PASSWORD"])
         .option("driver", "org.postgresql.Driver")
         .load()
     )
 
 
-film = load_table("film", ["film_id", "title"])
-film_category = load_table("film_category", ["film_id", "category_id"])
-category = load_table("category", ["category_id", "name"])
-actor = load_table("actor", ["actor_id", "first_name", "last_name"])
-film_actor = load_table("film_actor", ["actor_id", "film_id"])
-inventory = load_table("inventory", ["inventory_id", "film_id"])
+film = load_table("film", "film_id", "title")
+film_category = load_table("film_category", "film_id", "category_id")
+category = load_table("category", "category_id", "name")
+actor = load_table("actor", "actor_id", "first_name", "last_name")
+film_actor = load_table("film_actor", "actor_id", "film_id")
+inventory = load_table("inventory", "inventory_id", "film_id")
 rental = load_table(
     "rental",
-    ["rental_id", "customer_id", "inventory_id", "rental_date", "return_date"],
+    "rental_id", "customer_id", "inventory_id", "rental_date", "return_date",
 )
-payment = load_table("payment", ["rental_id", "amount"])
-customer = load_table("customer", ["customer_id", "address_id", "active"])
-address = load_table("address", ["address_id", "city_id"])
-city = load_table("city", ["city_id", "city"])
+payment = load_table("payment", "rental_id", "amount")
+customer = load_table("customer", "customer_id", "address_id", "active")
+address = load_table("address", "address_id", "city_id")
+city = load_table("city", "city_id", "city")
 
 
 # 1. Output the number of movies in each category, sorted in descending order.
@@ -96,7 +102,7 @@ task1_result.show(truncate=False)
 
 
 # 2. Output the 10 actors whose movies rented the most, sorted in descending order.
-task2_result = (
+task2_result_with_complex_grouping = (
     actor
     .join(film_actor, on="actor_id")
     .join(inventory, on="film_id")
@@ -107,7 +113,8 @@ task2_result = (
     .orderBy(F.desc("total_rentals"))
     .limit(10)
 )
-task2_result.show(truncate=False)
+logger.info("TASK 2 WITH COMPLEX JOIN:")
+task2_result_with_complex_grouping.show(truncate=False)
 
 """
 +--------+----------+-----------+-------------+
@@ -125,7 +132,36 @@ task2_result.show(truncate=False)
 |90      |SEAN      |GUINESS    |1903         |
 +--------+----------+-----------+-------------+
 """
+task2_result_without_complex_join = (
+    actor
+    .join(film_actor, on="actor_id")
+    .join(inventory, on="film_id")
+    .join(rental, on="inventory_id")
+    .groupBy("actor_id")
+    .count()
+    .withColumnRenamed("count", "total_rentals")
+    .orderBy(F.desc("total_rentals"))
+    .limit(10)
+    .join(actor, on="actor_id", how="left")
+    .select("actor_id", "first_name", "last_name", "total_rentals")
+    .orderBy(F.desc("total_rentals"))
+)
 
+logger.info("TASK 2 WITHOUT COMPLEX JOIN:")
+task2_result_without_complex_join.show(truncate=False)
+
+
+# Execution Plans for both ways
+logger.info("EXECUTION PLAN: COMPLEX GROUPING")
+task2_result_with_complex_grouping.explain(mode="formatted")
+
+logger.info("EXECUTION PLAN: SIMPLE GROUPING")
+task2_result_without_complex_join.explain(mode="formatted")
+"""
+Based on the physical execution plans, the complex grouping approach is expected to perform better than the 
+current simple grouping implementation. Although the latter groups by fewer columns, it introduces an additional 
+SortMergeJoin, reads the actor table twice, and requires another sorting operation. However, this conclusion is based 
+on execution plan analysis, not measured runtime. Removing the redundant initial actor join could improve the second approach."""
 
 # 3. Output the film category on which the most money has been spent.
 task3_result = (
